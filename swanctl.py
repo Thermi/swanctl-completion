@@ -53,11 +53,8 @@ class SwanctlAutoComplete():
             "--prev")
         argparser.add_argument(
             "--words")
-        eprint(sys.argv)
 
         known_args, unknown_args = argparser.parse_known_args()
-        eprint(known_args)
-        eprint(unknown_args)
         cls.switch_on_command(known_args)
 
     @classmethod
@@ -87,7 +84,35 @@ class SwanctlAutoComplete():
                         filtered_opts.pop(opt_long)
                     except:
                         pass
-        eprint(filtered_opts)
+        return filtered_opts
+
+    @classmethod
+    def filter_opts_conflicting(cls, orig_opts, possible_opts, conflicting_opts_groups):
+        filtered_opts = {}
+        for opt_short, opt_long in possible_opts:
+            filtered_opts[opt_short] = 0
+            filtered_opts[opt_long] = 0
+        # iterate over tuples of ((short_opt, long_opt), (short_opt, long_opt))
+        for conflicting_opts_group in conflicting_opts_groups:
+            for conflicting_opt_short_long in conflicting_opts_group:
+                for word in conflicting_opt_short_long:
+                    if word in orig_opts:
+                        for opt in itertools.chain(*conflicting_opts_group):
+                            try:
+                                filtered_opts.pop(opt)
+                            except:
+                                pass
+        for word in orig_opts:
+            for opt_short, opt_long in possible_opts:
+                if word in (opt_short, opt_long):
+                    try:
+                        filtered_opts.pop(opt_short)
+                    except:
+                        pass
+                    try:
+                        filtered_opts.pop(opt_long)
+                    except:
+                        pass
         return filtered_opts
 
     @classmethod
@@ -97,6 +122,7 @@ class SwanctlAutoComplete():
                 if item1 == item2:
                     return True
         return False
+
     @classmethod
     def switch_on_command(cls, args):
         """
@@ -125,15 +151,15 @@ class SwanctlAutoComplete():
             print(" ")
             sys.exit(0)
         def timeout_handler(filtered_opts):
-            print("\t")
+            print(" ")
             sys.exit(0)
         def file_handler(filtered_opts):
             # returnstatus 4 is handled by the shell script as prompt to
             # run _filedir
-            print("\t")
+            print(" ")
             sys.exit(4)
         def url_handler(filtered_opts):
-            print("\t")
+            print(" ")
             # returnstatus 5 is handled by the shell script as prompt to
             # run _known_hosts_real or other handler to get known hosts
             sys.exit(5)
@@ -153,7 +179,6 @@ class SwanctlAutoComplete():
             sys.exit(0)
 
         command = words[1]
-        eprint(command)
         # deal with general opts
         general_opts = cls.filter_opts(words, general_opts)
         # no suggestions if help message is asked
@@ -169,11 +194,11 @@ class SwanctlAutoComplete():
 
         if command in ("--counters", "-C"):
             opts = [("-n", "--name"), ("-a", "--all"), ("-R", "--reset")]
-            filtered_opts = cls.filter_opts(words, opts)
+            filtered_opts = cls.filter_opts_conflicting(
+                words, opts, [(("-n", "--name"), ("-a", "--all"))])
+
             if cls.check_opts((prev, cur), ("-n", "--name")):
-                eprint("Found %s in opts" % prev)
                 ike_sa_name_handler(filtered_opts)
-            eprint("Args: %s" % prev)
             print(" ".join(itertools.chain(filtered_opts.keys(),
                                            general_opts)))
         elif command in ("--initiate", "-i"):
@@ -183,14 +208,13 @@ class SwanctlAutoComplete():
                 child_sa_name_handler(filtered_opts)
             if cls.check_opts((prev. cur), ("-i", "--ike")):
                 ike_sa_name_handler(filtered_opts)
-
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
-
         elif command in ("-t", "--terminate"):
             opts = [("-c", "--child"), ("-i", "--ike"), ("-C", "--child-id"),
                     ("-I", "--ike-id"), ("-f", "--force"), ("-t", "--timeout")]
-            filtered_opts = cls.filter_opts(words, opts)
+            filtered_opts = cls.filter_opts_conflicting(
+                words, opts, [(("-C", "--child-id"), ("-I", "--ike-id"))])
 
             # deal with child_sa name
             if cls.check_opts((prev, opts), ("-c", "--child")):
@@ -208,11 +232,11 @@ class SwanctlAutoComplete():
                 timeout_handler(filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
-
         elif command in ("-R", "--rekey"):
             opts = [("-c", "--child"), ("-i", "--ike"), ("-C", "--child-id"),
                     ("-I", "--ike-id"), ("-a", "--reauth")]
-            filtered_opts = cls.filter_opts(words, opts)
+            filtered_opts = cls.filter_opts_conflicting(
+                words, opts, [(("-C", "--child-id"), ("-I", "--ike-id"))])
 
             # deal with child_sa name
             if cls.check_opts((prev, opts), ("-c", "--child")):
@@ -369,6 +393,7 @@ class SwanctlAutoComplete():
         elif command in ("-v", "--version"):
             opts = [("-d", "--daemon")]
             filtered_opts = cls.filter_opts(words, opts)
+
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         else:
