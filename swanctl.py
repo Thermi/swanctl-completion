@@ -1,21 +1,21 @@
 #! /bin/env python3
 """
 Helper python script for the swanctl autocompletion bash script.
-Provides the ability to list 
+Provides the ability to list IKE_SA and CHILD_SA names and IDs.
 """
 import argparse
 import itertools
+import os
 import shlex
 import sys
 
-#import vici
+import vici
 
 def eprint(*args, **kwargs):
     """
     Print to stderr
     """
-    stream = open("completion_test", "a")
-    print(*args, file=stream, **kwargs)
+    print(*args, file=sys.stderr, **kwargs)
 
 
 class SwanctlAutoComplete():
@@ -35,9 +35,13 @@ class SwanctlAutoComplete():
                       "-c", "-s", "-a", "-T", "-v", "-s", "-r", "-h"]
     options = ["--help", "-h", "--raw", "-r", "--pretty", "-P", "--debug",
                "-v", "--options", "-+", "--uri", "-u"]
-    
+
     @classmethod
     def main(cls):
+        """
+        Main function. Contains the argument parser and is used as entrypoint for the
+        auto completion script
+        """
         argparser = argparse.ArgumentParser()
         argparser.add_argument("-c")
         argparser.add_argument(
@@ -54,11 +58,15 @@ class SwanctlAutoComplete():
         argparser.add_argument(
             "--words")
 
-        known_args, unknown_args = argparser.parse_known_args()
+        known_args, _ = argparser.parse_known_args()
         cls.switch_on_command(known_args)
 
     @classmethod
     def filter_opts(cls, orig_opts, possible_opts):
+        """
+        Filter out already existing opts (if the short opt appears,
+        do not present the long opt)
+        """
         # special handling for conflicting options
         # raw and pretty
         conflicting = ["--raw", "-r", "--pretty", "-P"]
@@ -88,6 +96,14 @@ class SwanctlAutoComplete():
 
     @classmethod
     def filter_opts_conflicting(cls, orig_opts, possible_opts, conflicting_opts_groups):
+        """
+        Takes groups of conflicting opts and returns all
+        non-conflicting opts as keys in a dict.
+        Groups of conflicting opts can be passed into conflicting_opts_groups as such:
+        [(group1_a, group1_b), (group2_a, group2_b)]
+        orig_opts contains user passed options and possible_opts contains all further possible
+        options (e.g. for -C/--counters -a --all -n --name, ...)
+        """
         filtered_opts = {}
         for opt_short, opt_long in possible_opts:
             filtered_opts[opt_short] = 0
@@ -117,6 +133,10 @@ class SwanctlAutoComplete():
 
     @classmethod
     def check_opts(cls, group1, group2):
+        """
+        Return True if any member of group1 is in group2.
+        Otherwise returns False
+        """
         for item1 in group1:
             for item2 in group2:
                 if item1 == item2:
@@ -135,34 +155,153 @@ class SwanctlAutoComplete():
         # words: bash array of all words
         # cword: count of words
 
-        def ike_sa_name_handler(filtered_opts):
+        def get_session():
+            uri = os.environ.get("SWANCTL_COMPLETION_VICI_URI")
+            if uri:
+                # TODO: Implement URI splitting and handling
+                pass
+            return vici.session.Session(sock=uri)
+
+        def ike_sa_config_handler(words, filtered_opts):
+            """
+            Handler to present possible IKE_SA config names to the user
+            """
+            possible_names = []
+            session = get_session()
+            for item in session.list_conns():
+                possible_names.extend(item.keys())
+            print(" ".join(possible_names))
+            sys.exit(0)
+
+        def ike_sa_name_handler(words, filtered_opts):
+            """
+            Handler to present possible IKE_SA names to the user
+            """
+            # get all known config IKE SA names, then add all known conn IKE SA names
+            possible_names = []
+            session = get_session()
+            for item in session.list_sas():
+                possible_names.extend(item.keys())
+            print(" ".join(possible_names))
+
+            sys.exit(0)
+
+        def child_sa_config_handler(words, filtered_opts):
+            """
+            Handler to present possible CHILD_SA config names to the user
+            """
+            possible_names = []
+            session = get_session()
+            parser = argparse.ArgumentParser()
+            parser.add_argument("-i", "--ike", nargs="?")
+            known_args, _ = parser.parse_known_args(words)
+
+            if known_args.ike:
+                for item in session.list_conns({"ike" : str(known_args.ike)}):
+                    for ike_sa_name, ike_sa in item.items():
+                        possible_names.extend(ike_sa["children"].keys())
+            else:
+                for ike_sas in session.list_conns():
+                    for ike_sa_name, ike_sa in ike_sas.items():
+                        possible_names.extend(ike_sa["children"])
+            print(" ".join(possible_names))
+            sys.exit(0)
+
+
+            # check if -i/--ike is set and if it is, use that filter
+        def child_sa_name_handler(words, filtered_opts):
+            """
+            Handler to present possible CHILD_SA names to the user
+            """
+            # check if -i, --ike, -I or --ike-id is set,
+            # then get corresponding child_sa names
+            possible_names = []
+            parser = argparse.ArgumentParser()
+            parser.add_argument("-i", "--ike", nargs="?")
+            parser.add_argument("-I", "--ike-id", nargs="?")
+            known_args, _ = parser.parse_known_args(words)
+            session = get_session()
+
+            if known_args.ike:
+                for item in session.list_conns({"ike" : str(known_args.ike)}):
+                    for ike_sa_name, ike_sa in item.items():
+                        possible_names.extend(ike_sa["children"].keys())
+                for item in session.list_sas({"ike": str(known_args.ike)}):
+                    possible_names.extend(item["child-sas"].keys())
+            elif known_args.ike_id:
+                for item in session.list_sas({"ike-id" : known_args.ike_id}):
+                    for ike_sa_name, ike_sa in item.items():
+                        possible_names.extend(ike_sa["child-sas"].keys())
+            else:
+                for ike_sas in session.list_conns():
+                    for ike_sa_name, ike_sa in ike_sas.items():
+                        possible_names.extend(ike_sa["children"])
+                for ike_sas in session.list_sas():
+                    for ike_sa_name, ike_sa in ike_sas.items():
+                        possible_names.extend(ike_sa["child-sas"].keys())
+            print(" ".join(possible_names))
+            sys.exit(0)
+        def ike_id_handler(words, filtered_opts):
+            """
+            Handler to present possible IKE_SA IDs to the user
+            """
+            # get all used IKE_SA IDs
+            possible_ids = []
+            session = get_session()
+            for item in session.list_sas():
+                for ike_sa_name, ike_sa in item.items():
+                    possible_ids.append(ike_sa["uniqueid"])
+
+            print(" ".join(possible_ids))
+            sys.exit(0)
+        def child_id_handler(words, filtered_opts):
+            """
+            Handler to present possible CHILD_SA IDs to the user
+            """
+            possible_ids = []
+            session = get_session()
+            for item in session.list_sas():
+                for ike_sa_name, ike_sa in item.items():
+                    for child_sa_name, child_sa in ike_sa["child-sas"].items():
+                        possible_ids.append(child_sa["uniqueid"])
+
+            print(" ".join(possible_ids))
+            sys.exit(0)
+
+        def pool_handler(words, filtered_opts):
+            """
+            Handler to present pool names to the user
+            """
+            possible_pools = []
+            session = get_session()
+            for item in session.get_pools({}):
+                possible_pools.extend(item)
+            
+            print(" ".join(possible_pools))
+            sys.exit(0)
+        def timeout_handler(words, filtered_opts):
+            """
+            Handler to present possible timeout values to the user
+            """
             print(" ")
             sys.exit(0)
-        def child_sa_name_handler(filtered_opts):
-            print(" ")
-            sys.exit(0)
-        def ike_id_handler(filtered_opts):
-            print(" ")
-            sys.exit(0)
-        def child_id_handler(filtered_opts):
-            print(" ")
-            sys.exit(0)
-        def pool_handler(filtered_opts):
-            print(" ")
-            sys.exit(0)
-        def timeout_handler(filtered_opts):
-            print(" ")
-            sys.exit(0)
-        def file_handler(filtered_opts):
+        def file_handler(words, filtered_opts):
+            """
+            Handler to present possible valid files to the user
+            """
             # returnstatus 4 is handled by the shell script as prompt to
             # run _filedir
             print(" ")
             sys.exit(4)
-        def url_handler(filtered_opts):
+        def url_handler(words, filtered_opts):
+            """
+            Handler to present possible valid URLs to the user
+            """
             print(" ")
             # returnstatus 5 is handled by the shell script as prompt to
             # run _known_hosts_real or other handler to get known hosts
             sys.exit(5)
+
         words = shlex.split(str(args.words))
 
         cur = args.cur
@@ -179,15 +318,26 @@ class SwanctlAutoComplete():
             sys.exit(0)
 
         command = words[1]
+        # if we only have the command, we set cur to "" to avoid presenting
+        # valid suggestions for options of that command that have the same
+        # name as the command and we also remove the first two words
+        # to avoid removing them from the list of suggestions
         # deal with general opts
+
+        if cword == 2:
+            prev = ""
+            # This is very hacky and should probably be handled differently
+            # (e.g. slicing the array before passed into filter_opts)
+            words[0] = ""
+            words[1] = ""
         general_opts = cls.filter_opts(words, general_opts)
         # no suggestions if help message is asked
         if cls.check_opts((prev, cur), ("-h", "--help")):
             sys.exit(0)
         if cls.check_opts((prev, cur), ("-u", "--uri")):
-            url_handler(general_opts)
+            url_handler(words, general_opts)
         if cls.check_opts((prev, cur), ("--options", "-+")):
-            file_handler(general_opts)
+            file_handler(words, general_opts)
         if cls.check_opts((prev, cur), ("-v", "--debug")):
             print("-1 0 1 2 3 4")
             sys.exit(0)
@@ -198,38 +348,39 @@ class SwanctlAutoComplete():
                 words, opts, [(("-n", "--name"), ("-a", "--all"))])
 
             if cls.check_opts((prev, cur), ("-n", "--name")):
-                ike_sa_name_handler(filtered_opts)
+                ike_sa_name_handler(words, filtered_opts)
             print(" ".join(itertools.chain(filtered_opts.keys(),
                                            general_opts)))
         elif command in ("--initiate", "-i"):
             opts = [("-c", "--child"), ("-i", "--ike")]
             filtered_opts = cls.filter_opts(words, opts)
             if cls.check_opts((prev, cur), ("-c", "--child")):
-                child_sa_name_handler(filtered_opts)
-            if cls.check_opts((prev. cur), ("-i", "--ike")):
-                ike_sa_name_handler(filtered_opts)
+                child_sa_name_handler(words, filtered_opts)
+            if cls.check_opts((prev, cur), ("-i", "--ike")):
+                ike_sa_name_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-t", "--terminate"):
             opts = [("-c", "--child"), ("-i", "--ike"), ("-C", "--child-id"),
                     ("-I", "--ike-id"), ("-f", "--force"), ("-t", "--timeout")]
             filtered_opts = cls.filter_opts_conflicting(
-                words, opts, [(("-C", "--child-id"), ("-I", "--ike-id"))])
+                words, opts, [(("-C", "--child-id"), ("-I", "--ike-id"),
+                               ("-c", "--child"), ("-i", "--ike"))])
 
             # deal with child_sa name
             if cls.check_opts((prev, opts), ("-c", "--child")):
-                child_sa_name_handler(filtered_opts)
+                child_sa_name_handler(words, filtered_opts)
             # deal with ike_sa name
             if cls.check_opts((prev, opts), ("-i", "--ike")):
-                ike_sa_name_handler(filtered_opts)
+                ike_sa_name_handler(words, filtered_opts)
             # deal with child IDs
             if cls.check_opts((prev, opts), ("-C", "--child-id")):
-                child_id_handler(filtered_opts)
+                child_id_handler(words, filtered_opts)
             # deal with ike_sa IDs
             if cls.check_opts((prev, opts), ("-I", "--ike-id")):
-                ike_id_handler(filtered_opts)
+                ike_id_handler(words, filtered_opts)
             if cls.check_opts((prev, opts), ("-t", "--timeout")):
-                timeout_handler(filtered_opts)
+                timeout_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-R", "--rekey"):
@@ -243,13 +394,13 @@ class SwanctlAutoComplete():
                 sys.exit(0)
             # deal with ike_sa name
             if cls.check_opts((prev, opts), ("-i", "--ike")):
-                ike_sa_name_handler(filtered_opts)
+                ike_sa_name_handler(words, filtered_opts)
             # deal with child IDs
             if cls.check_opts((prev, opts), ("-C", "--child-id")):
-                child_id_handler(filtered_opts)
+                child_id_handler(words, filtered_opts)
             # deal with ike_sa IDs
             if cls.check_opts((prev, opts), ("-I", "--ike-id")):
-                ike_id_handler(filtered_opts)
+                ike_id_handler(words, filtered_opts)
 
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
@@ -260,16 +411,16 @@ class SwanctlAutoComplete():
 
             # deal with child_sa name
             if cls.check_opts((prev, opts), ("-c", "--child")):
-                child_sa_name_handler(filtered_opts)
+                child_sa_name_handler(words, filtered_opts)
             # deal with ike_sa name
             if cls.check_opts((prev, opts), ("-i", "--ike")):
-                ike_sa_name_handler(filtered_opts)
+                ike_sa_name_handler(words, filtered_opts)
             # deal with child IDs
             if cls.check_opts((prev, opts), ("-C", "--child-id")):
-                child_id_handler(filtered_opts)
+                child_id_handler(words, filtered_opts)
             # deal with ike_sa IDs
             if cls.check_opts((prev, opts), ("-I", "--ike-id")):
-                ike_id_handler(filtered_opts)
+                ike_id_handler(words, filtered_opts)
 
             if cls.check_opts((prev, opts), ("-p", "--peer-id", "-g", "--gateway")):
                 sys.exit(0)
@@ -282,9 +433,9 @@ class SwanctlAutoComplete():
             filtered_opts = cls.filter_opts(words, opts)
 
             if cls.check_opts((prev, opts), ("-i", "--ike")):
-                ike_sa_name_handler(filtered_opts)
+                ike_sa_name_handler(words, filtered_opts)
             if cls.check_opts((prev, opts), ("-c", "--child")):
-                child_sa_name_handler(filtered_opts)
+                child_sa_name_handler(words, filtered_opts)
 
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
@@ -293,9 +444,9 @@ class SwanctlAutoComplete():
             filtered_opts = cls.filter_opts(words, opts)
 
             if cls.check_opts((prev, opts), ("-i", "--ike")):
-                ike_sa_name_handler(filtered_opts)
+                ike_sa_name_handler(words, filtered_opts)
             if cls.check_opts((prev, opts), ("-I", "--ike-id")):
-                ike_id_handler(filtered_opts)
+                ike_id_handler(words, filtered_opts)
 
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
@@ -305,7 +456,7 @@ class SwanctlAutoComplete():
             filtered_opts = cls.filter_opts(words, opts)
 
             if cls.check_opts((prev, opts), ("-c", "--child")):
-                child_sa_name_handler(filtered_opts)
+                child_sa_name_handler(words, filtered_opts)
 
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
@@ -338,7 +489,9 @@ class SwanctlAutoComplete():
 
             if cls.check_opts((prev, opts), ("-n", "--name")):
                 # handle pool name
-                pool_handler(filtered_opts)
+                pool_handler(words, filtered_opts)
+            if cls.check_opts((prev, opts), ("-f", "--file")):
+                file_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-f", "--flush-certs"):
@@ -355,7 +508,7 @@ class SwanctlAutoComplete():
             filtered_opts = cls.filter_opts(words, opts)
 
             if cls.check_opts((prev, opts), ("-f", "--file")):
-                file_handler(filtered_opts)
+                file_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-b", "--load-authorities"):
@@ -363,7 +516,7 @@ class SwanctlAutoComplete():
             filtered_opts = cls.filter_opts(words, opts)
 
             if cls.check_opts((prev, opts), ("-f", "--file")):
-                file_handler(filtered_opts)
+                file_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-c", "--load-conns"):
@@ -371,7 +524,7 @@ class SwanctlAutoComplete():
             filtered_opts = cls.filter_opts(words, opts)
 
             if cls.check_opts((prev, opts), ("-f", "--file")):
-                file_handler(filtered_opts)
+                file_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-s", "--load-creds"):
@@ -379,7 +532,7 @@ class SwanctlAutoComplete():
             filtered_opts = cls.filter_opts(words, opts)
 
             if cls.check_opts((prev, opts), ("-f", "--file")):
-                file_handler(filtered_opts)
+                file_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-a", "--load-pools"):
@@ -387,7 +540,7 @@ class SwanctlAutoComplete():
             filtered_opts = cls.filter_opts(words, opts)
 
             if cls.check_opts((prev, opts), ("-f", "--file")):
-                file_handler(filtered_opts)
+                file_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-v", "--version"):
