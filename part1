@@ -1,0 +1,7 @@
+# swanctl completion
+
+_swanctl() {
+    local cur prev words cword
+    _init_completion || return
+
+    REPLY=$(python -c '
