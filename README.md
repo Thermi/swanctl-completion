@@ -39,5 +39,6 @@ Just open an issue on the GH repo for this script.
 
 FAQ
 ===
-*Q* Is this script affiliated with the strongSwan project?
-*A* No.
+*Question* Is this script affiliated with the strongSwan project?
+
+*Answer*   No.
