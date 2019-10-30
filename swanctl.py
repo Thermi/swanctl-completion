@@ -7,9 +7,15 @@ import argparse
 import itertools
 import os
 import shlex
+import socket
 import sys
+import urllib
 
-import vici
+try:
+    import vici
+    HAVE_VICI_EGG = True
+except:
+    HAVE_VICI_EGG = False
 
 def eprint(*args, **kwargs):
     """
@@ -59,6 +65,7 @@ class SwanctlAutoComplete():
             "--words")
 
         known_args, _ = argparser.parse_known_args()
+
         cls.switch_on_command(known_args)
 
     @classmethod
@@ -156,11 +163,31 @@ class SwanctlAutoComplete():
         # cword: count of words
 
         def get_session():
-            uri = os.environ.get("SWANCTL_COMPLETION_VICI_URI")
-            if uri:
-                # TODO: Implement URI splitting and handling
-                pass
-            return vici.session.Session(sock=uri)
+            # print " " and exit if no vici gem exists
+            global HAVE_VICI_EGG
+            if HAVE_VICI_EGG:
+                custom_sock = None
+                uri = os.environ.get("SWANCTL_COMPLETION_VICI_URI")
+                if uri:
+                    parse_result = urllib.parse.urlsplit(uri)
+                    if parse_result.scheme == "unix":
+                        path = parse_result.path
+                        custom_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                        custom_sock.connect(path)
+                    elif parse_result.scheme == "tcp":
+                        host = parse_result.hostname
+                        port = parse_result.port
+                        custom_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        custom_sock.connect((host, port))
+                    else:
+                        eprint("Unsupported URL scheme %s" % parse_result.scheme)
+                        print(" ")
+                        sys.exit(1)
+                    pass
+                return vici.session.Session(sock=custom_sock)
+            print(" ")
+            sys.exit(0)
+
 
         def ike_sa_config_handler(words, filtered_opts):
             """
@@ -250,7 +277,7 @@ class SwanctlAutoComplete():
             session = get_session()
             for item in session.list_sas():
                 for ike_sa_name, ike_sa in item.items():
-                    possible_ids.append(ike_sa["uniqueid"])
+                    possible_ids.append(ike_sa["uniqueid"].decode("utf-8"))
 
             print(" ".join(possible_ids))
             sys.exit(0)
@@ -263,7 +290,7 @@ class SwanctlAutoComplete():
             for item in session.list_sas():
                 for ike_sa_name, ike_sa in item.items():
                     for child_sa_name, child_sa in ike_sa["child-sas"].items():
-                        possible_ids.append(child_sa["uniqueid"])
+                        possible_ids.append(child_sa["uniqueid"].decode("utf-8"))
 
             print(" ".join(possible_ids))
             sys.exit(0)
@@ -355,9 +382,9 @@ class SwanctlAutoComplete():
             opts = [("-c", "--child"), ("-i", "--ike")]
             filtered_opts = cls.filter_opts(words, opts)
             if cls.check_opts((prev, cur), ("-c", "--child")):
-                child_sa_name_handler(words, filtered_opts)
+                child_sa_config_handler(words, filtered_opts)
             if cls.check_opts((prev, cur), ("-i", "--ike")):
-                ike_sa_name_handler(words, filtered_opts)
+                ike_sa_config_handler(words, filtered_opts)
             print(str.join(" ", itertools.chain(filtered_opts.keys(),
                                                 general_opts)))
         elif command in ("-t", "--terminate"):
