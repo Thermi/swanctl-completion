@@ -44,8 +44,13 @@ Current problems:
 How to report bugs:
 Just open an issue on the GH repo for this script.
 
+License: GPLv3
 FAQ
 ===
 *Question* Is this script affiliated with the strongSwan project?
 
 *Answer*   No.
+
+*Question* What's swanctl_2.sh for?
+*Answer*   It's so you don't need to rebuild the swanctl.sh script if you want to test your changes to the script.
+           If you use that, you will need to be in the same directory as the swanctl.py script, otherwise it won't work. That's why you should use swanctl.sh and rebuild it after you tested your changes and want to use it productively.
