@@ -19,6 +19,13 @@ Features:
 * User configurable URI to VICI socket
 * Easily changeable for users due to clear Python syntax
 
+How to hack/build:
+1) Make your changes to swanctl.py
+2) run makeme.sh in the directory that swanctl.py, part1 and part2 are in
+3) completion script is now in swanctl.py
+NOTE: You can not use single quotes in the python script because it is used as delimiter
+for the script in the bash script!
+
 How to install:
 1) Copy it in some dir you have access to
 2) source it from your shell
