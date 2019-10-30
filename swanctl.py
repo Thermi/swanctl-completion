@@ -166,25 +166,27 @@ class SwanctlAutoComplete():
             # print " " and exit if no vici gem exists
             global HAVE_VICI_EGG
             if HAVE_VICI_EGG:
-                custom_sock = None
-                uri = os.environ.get("SWANCTL_COMPLETION_VICI_URI")
-                if uri:
-                    parse_result = urllib.parse.urlsplit(uri)
-                    if parse_result.scheme == "unix":
-                        path = parse_result.path
-                        custom_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                        custom_sock.connect(path)
-                    elif parse_result.scheme == "tcp":
-                        host = parse_result.hostname
-                        port = parse_result.port
-                        custom_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        custom_sock.connect((host, port))
-                    else:
-                        eprint("Unsupported URL scheme %s" % parse_result.scheme)
-                        print(" ")
-                        sys.exit(1)
+                try:
+                    custom_sock = None
+                    uri = os.environ.get("SWANCTL_COMPLETION_VICI_URI")
+                    if uri:
+                        parse_result = urllib.parse.urlsplit(uri)
+                        if parse_result.scheme == "unix":
+                            path = parse_result.path
+                            custom_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                            custom_sock.connect(path)
+                        elif parse_result.scheme == "tcp":
+                            host = parse_result.hostname
+                            port = parse_result.port
+                            custom_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            custom_sock.connect((host, port))
+                        else:
+                            eprint("Unsupported URL scheme %s" % parse_result.scheme)
+                            print(" ")
+                            sys.exit(1)
+                    return vici.session.Session(sock=custom_sock)
+                except:
                     pass
-                return vici.session.Session(sock=custom_sock)
             print(" ")
             sys.exit(0)
 
