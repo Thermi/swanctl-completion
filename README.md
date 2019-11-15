@@ -22,12 +22,12 @@ Features:
 How to hack/build:
 1) Make your changes to swanctl.py
 2) run makeme.sh in the directory that swanctl.py, part1 and part2 are in
-3) completion script is now in swanctl.py
+3) completion script is now in swanctl.sh
 NOTE: You can not use single quotes in the python script because it is used as delimiter
 for the script in the bash script!
 
 How to install:
-1) Copy it in some dir you have access to
+1) Copy it into a bash completion directory, as shown [here under Q. Where should I install my own local completions?](https://github.com/scop/bash-completion/blob/master/README.md) and name it just "swanctl" (without any file extension)
 2) source it from your shell
 
 Optional:
@@ -52,5 +52,6 @@ FAQ
 *Answer*   No.
 
 *Question* What's swanctl_2.sh for?
+
 *Answer*   It's so you don't need to rebuild the swanctl.sh script if you want to test your changes to the script.
            If you use that, you will need to be in the same directory as the swanctl.py script, otherwise it won't work. That's why you should use swanctl.sh and rebuild it after you tested your changes and want to use it productively.
